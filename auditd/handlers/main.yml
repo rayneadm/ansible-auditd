@@ -1,0 +1,20 @@
+- name: HANDLERS restart and enable auditd
+  become: true
+  ansible.builtin.service:
+    name: auditd
+    state: restarted
+    enabled: true
+  listen: "Restart and enable auditd"
+  tags:
+    - auditd
+
+- name: Restart auditd
+  ansible.builtin.service:
+    name: auditd
+    state: restarted
+    use: service  # systemctl can't restart auditd, service can: https://access.redhat.com/solutions/2664811
+    enabled: true
+  listen: "Restart auditd"
+  tags:
+    - auditd
+

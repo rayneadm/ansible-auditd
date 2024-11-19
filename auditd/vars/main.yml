@@ -1,0 +1,4 @@
+---
+package_deb: auditd
+package_rhel: audit
+auditd_config_directory: /etc/audit

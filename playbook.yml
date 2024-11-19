@@ -1,0 +1,16 @@
+---
+- name: Check OS Type
+  hosts: all
+  become: true            # Включаем использование прав суперпользователя
+  become_method: sudo     # Указываем метод использования sudo
+  become_user: root       # Пользователь, под которым выполняются команды
+  gather_facts: yes
+  tasks:
+    - name: Display OS Type
+      debug:
+        msg: "ОС: {{ ansible_distribution }} {{ ansible_distribution_version }} "
+    - name: Display OS Family
+      debug:
+        msg: "ОС Family: {{ ansible_distribution_file_variety }} IPv4: {{ ansible_facts['default_ipv4']['address'] }}"
+  roles:
+  - { role: auditd, tags: [auditd]}

@@ -1,0 +1,415 @@
+# Remove any existing rules
+-D
+
+# Buffer Size
+## Feel free to increase this if the machine panic's
+-b 8192
+
+# Failure Mode
+## Possible values: 0 (silent), 1 (printk, print a failure message), 2 (panic, halt the system)
+-f 1
+
+# Ignore errors
+## e.g. caused by users or files not found in the local environment
+-i
+
+# Self Auditing ---------------------------------------------------------------
+
+## Audit the audit logs
+### Successful and unsuccessful attempts to read information from the audit records
+-w /var/log/audit/ -F auid!=-1 -k auditlog_rwa
+-w /var/log/secure -F auid!=-1 -k auditlog_rwa
+-w /var/log/messages -F auid!=-1 -k auditlog_rwa
+-w /var/log/auth.log -F auid!=-1 -k auditlog_rwa
+-w /var/log/syslog -F auid!=-1 -k auditlog_rwa
+
+## Auditd configuration
+### Modifications to audit configuration that occur while the audit collection functions are operating
+-w /etc/audit/ -p wa -k auditconfig_wa
+-w /etc/audit/rules.d/audit.rules -p rwa -k auditconfig_rwa
+-w /etc/libaudit.conf -p wa -k auditconfig_wa
+-w /etc/audisp/ -p wa -k audispconfig_wa
+-w /etc/rsyslog.conf -p wa -k rsyslog_wa
+
+## Monitor for use of audit management tools
+-w /sbin/auditctl -p x -F auid!=-1 -k audittools_x
+-w /sbin/auditd -p x -F auid!=-1 -k audittools_x
+-w /usr/sbin/augenrules -p x -F auid!=-1 -k audittools_x
+
+
+### New file in web directory
+-w /var/www/ -p wa -k new_file_www
+
+### Web shell detect
+#### Create new process
+-a always,exit -F arch=b32 -S execve -F euid=33 -k execve_www
+-a always,exit -F arch=b64 -S execve -F euid=33 -k execve_www
+
+
+
+# Filters Excludes ---------------------------------------------------------------------
+
+
+## Ignore SELinux AVC records
+-A always,exclude -F msgtype=AVC
+
+## Ignore current working directory records
+-A always,exclude -F msgtype=CWD
+
+## Ignore record the end of a multi-record event.
+-A exclude,always -F msgtype=EOE
+
+## Ignore trigger when a user executes a program with a file system capability.
+-A exclude,always -F msgtype=BPRM_FCAPS
+
+## Cron jobs fill the logs with stuff we normally don't want (works with SELinux)
+-A never,user -F subj_type=crond_t
+-A never,exit -F subj_type=crond_t
+
+## This prevents chrony from overwhelming the logs
+-A never,exit -F arch=b64 -S adjtimex -F auid=unset -F uid=chrony -F subj_type=chronyd_t
+
+## This is not very interesting and wastes a lot of space if the server is public facing
+-A always,exclude -F msgtype=CRYPTO_KEY_USER
+
+## VMWare tools
+-a exit,never -F arch=b64 -S all -F exe=/usr/bin/vmtoolsd
+
+## High Volume Event Filter (especially on Linux Workstations)
+-A never,exit -F arch=b64 -F dir=/dev/shm
+-A never,exit -F arch=b64 -F dir=/var/lock/lvm
+
+## Nice - run a program with modified scheduling priority
+-A never,exit -F arch=b64 -F exe=/usr/bin/nice
+
+## Find - search for files in a directory hierarchy
+-A never,exit -F arch=b64 -F exe=/usr/bin/find -F auid=-1
+
+## du - estimate file space usage
+-A never,exit -F arch=b64 -F exe=/usr/bin/du -F auid=-1
+
+
+
+# Rules -----------------------------------------------------------------------
+
+###CMD history for every non system user
+-a exit,always -F arch=b64 -F uid>=500 -S execve -k auditcmd
+-a exit,always -F arch=b32 -F uid>=500 -S execve -k auditcmd
+
+## Kernel parameters
+-w /etc/sysctl.conf -p wa -k sysctl_wa
+-w /etc/sysctl.d -p wa -k sysctl_wa
+
+## Kernel module loading and unloading
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/insmod -k modules
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/modprobe -k modules
+-a always,exit -F perm=x -F auid!=-1 -F path=/sbin/rmmod -k modules
+-a always,exit -F arch=b64 -S finit_module -S init_module -S delete_module -F auid!=-1 -k modules
+
+## Modprobe configuration
+-w /etc/modprobe.conf -p wa -k modprobe_wa
+-w /etc/modprobe.d -p wa -k modprobe_wa
+
+## KExec usage (all actions)
+-a always,exit -F arch=b64 -S kexec_load -k KEXEC
+
+## Special files
+-a always,exit -F arch=b64 -S mknod -S mknodat -F auid!=-1 -F auid>=1000 -k specialfiles
+
+## Mount operations (only attributable)
+-a always,exit -F arch=b64 -S mount -S umount2 -F auid!=-1 -k mount
+
+## Change swap (only attributable)
+-a always,exit -F arch=b64 -S swapon -S swapoff -F auid!=-1 -k swap_on_or_off
+
+## Time
+#-a always,exit -F arch=b64 -F uid!=ntp -S adjtimex -S settimeofday -S clock_settime -k time
+
+### Local time zone
+-w /etc/localtime -p wa -k localtime_wa
+
+## Stunnel
+-w /usr/sbin/stunnel -p x -k stunnel_x
+-w /usr/bin/stunnel -p x -k stunnel_x
+
+## Cron configuration & scheduled jobs
+-w /etc/cron.allow -p wa -k cron_wa
+-w /etc/cron.deny -p wa -k cron_wa
+-w /etc/cron.d/ -p wa -k cron_wa
+-w /etc/cron.daily/ -p wa -k cron_wa
+-w /etc/cron.hourly/ -p wa -k cron_wa
+-w /etc/cron.monthly/ -p wa -k cron_wa
+-w /etc/cron.weekly/ -p wa -k cron_wa
+-w /etc/crontab -p wa -k cron_wa
+-w /var/spool/cron/ -k cron_wa
+
+## User, group, password databases
+-w /etc/group -p wa -k etcgroup_wa
+-w /etc/passwd -p wa -k etcpasswd_wa
+-w /etc/gshadow -F auid!=-1 -k etcgshadow_rwa
+-w /etc/shadow -F auid!=-1 -k etcshadow_rwa
+-w /etc/security/opasswd -F auid!=-1 -k etcopasswd_rwa
+
+## Sudoers file changes
+-w /etc/sudoers -p wa -k sudoers_wa
+-w /etc/sudoers.d/ -p wa -k actions_config_wa
+
+## Passwd
+-w /usr/bin/passwd -p x -k passwd_modification_x
+
+## Tools to change group identifiers
+-w /usr/sbin/groupadd -p x -k group_modification_x
+-w /usr/sbin/groupmod -p x -k group_modification_x
+-w /usr/sbin/addgroup -p x -k group_modification_x
+-w /usr/sbin/useradd -p x -k user_modification_x
+-w /usr/sbin/userdel -p x -k user_modification_x
+-w /usr/sbin/usermod -p x -k user_modification_x
+-w /usr/sbin/adduser -p x -k user_modification_x
+
+## Login configuration and information
+-w /etc/login.defs -p wa -k login_wa
+-w /etc/securetty -p wa -k login_wa
+-w /var/log/faillog -p wa -k login_wa
+-w /var/log/lastlog -p wa -k login_wa
+-w /var/log/tallylog -p wa -k login_wa
+-w /etc/sssd -p wa -k sssd_wa
+
+## Network Environment
+### Changes to hostname
+-a always,exit -F arch=b64 -S sethostname -S setdomainname -k change_hostname
+
+### Successful IPv4 Connections
+-a always,exit -F arch=b64 -S connect -F a2=16 -F success=1 -F key=network_connect_4
+
+### Successful IPv6 Connections
+#-a always,exit -F arch=b64 -S connect -F a2=28 -F success=1 -F key=network_connect_6
+
+### Changes to other files
+-w /etc/hosts -p wa -k etchosts_modifications_wa
+-w /etc/resolv.conf -p wa -k resolv_modifications_wa
+-w /etc/sysconfig -p wa -k network_modifications_wa
+-w /etc/netplan -p wa -k network_modifications_wa
+-w /etc/network/ -p wa -k network_wa
+-a always,exit -F dir=/etc/NetworkManager/ -F perm=wa -k network_modifications_wa
+
+
+### Changes to issue
+-w /etc/issue -p wa -k etcissue_wa
+-w /etc/issue.net -p wa -k etcissue_wa
+
+## System startup scripts
+-w /etc/inittab -p wa -k init_wa
+-w /etc/init.d/ -p wa -k init_wa
+-w /etc/init/ -p wa -k init_wa
+
+## Library search paths
+-w /etc/ld.so.conf -p wa -k libpath_wa
+-w /etc/ld.so.conf.d -p wa -k libpath_wa
+
+## Systemwide library preloads (LD_PRELOAD)
+-w /etc/ld.so.preload -p wa -k systemwide_preloads_wa
+
+## Pam (Pluggable Authentication Modules) configuration
+-w /etc/pam.d/ -p wa -k pam_wa
+-w /etc/security/limits.conf -p wa  -k pam_wa
+-w /etc/security/limits.d -p wa  -k pam_wa
+-w /etc/security/pam_env.conf -p wa -k pam_wa
+-w /etc/security/namespace.conf -p wa -k pam_wa
+-w /etc/security/namespace.d -p wa -k pam_wa
+-w /etc/security/namespace.init -p wa -k pam_wa
+
+## Mail configuration
+-w /etc/aliases -p wa -k mail_wa
+-w /etc/postfix/ -p wa -k mail_wa
+-w /etc/exim4/ -p wa -k mail_wa
+
+## SSH configuration
+-w /etc/ssh/sshd_config -F auid!=-1 -k sshd_rwa
+-w /etc/ssh/sshd_config.d -F auid!=-1 -k sshd_rwa
+
+## root ssh key tampering
+-w /root/.ssh -p wa -k rootkey_wa
+
+# Systemd
+-w /bin/systemctl -p x -k systemd_x
+-w /etc/systemd/ -p wa -k systemd_wa
+
+## SELinux events that modify the system's Mandatory Access Controls (MAC)
+-w /etc/selinux/ -p wa -k mac_policy
+
+## Critical elements access failures
+-a always,exit -F arch=b64 -S open -F dir=/etc -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/bin -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/sbin -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/usr/bin -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/usr/sbin -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/var -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/home -F success=0 -k unauthedfileaccess_rwax
+-a always,exit -F arch=b64 -S open -F dir=/srv -F success=0 -k unauthedfileaccess_rwax
+
+## Process ID change (switching accounts) applications
+-w /bin/su -p x -k priv_esc_x
+-w /usr/bin/sudo -p x -k priv_esc_x
+
+## Power state
+-w /sbin/shutdown -p x -k shutdown_x
+-w /sbin/poweroff -p x -k poweroff_x
+-w /sbin/reboot -p x -k reboot_x
+-w /sbin/halt -p x -k halt_x
+
+## Session initiation information
+-w /var/run/utmp -p wa -k session_wa
+-w /var/log/btmp -p wa -k session_wa
+-w /var/log/wtmp -p wa -k session_wa
+
+## Discretionary Access Control (DAC) modifications
+-a always,exit -F arch=b64 -S chmod -k perm_mod_x
+-a always,exit -F arch=b64 -S chown -k perm_mod_x
+-a always,exit -F arch=b64 -S fchmod -k perm_mod_x
+-a always,exit -F arch=b64 -S fchmodat -k perm_mod_x
+-a always,exit -F arch=b64 -S fchown -k perm_mod_x
+-a always,exit -F arch=b64 -S fchownat -k perm_mod_x
+-a always,exit -F arch=b64 -S fremovexattr -k perm_mod_x
+-a always,exit -F arch=b64 -S fsetxattr -k perm_mod_x
+-a always,exit -F arch=b64 -S lchown -k perm_mod_x
+-a always,exit -F arch=b64 -S lremovexattr -k perm_mod_x
+-a always,exit -F arch=b64 -S lsetxattr -k perm_mod_x
+-a always,exit -F arch=b64 -S removexattr -k perm_mod_x
+-a always,exit -F arch=b64 -S setxattr -k perm_mod_x
+
+# Special Rules ---------------------------------------------------------------
+
+## Reconnaissance
+-w /usr/bin/whoami -p x -k recon
+-w /usr/bin/id -p x -k recon
+-w /bin/hostname -p x -k recon
+-w /bin/uname -p x -k recon
+-w /etc/issue -p r -k recon
+-w /etc/hostname -p r -k recon
+
+## Suspicious activity
+-w /usr/bin/wget -p x -k susp_activity_x
+-w /usr/bin/curl -p x -k susp_activity_x
+-w /usr/bin/base64 -p x -k susp_activity_x
+-w /bin/nc -p x -k susp_activity_x
+-w /bin/netcat -p x -k susp_activity_x
+-w /usr/bin/ncat -p x -k susp_activity_x
+-w /usr/bin/ssh -p x -k susp_activity_x
+-w /usr/bin/scp -p x -k susp_activity_x
+-w /usr/bin/sftp -p x -k susp_activity_x
+-w /usr/bin/ftp -p x -k susp_activity_x
+-w /usr/bin/socat -p x -k susp_activity_x
+-w /usr/bin/wireshark -p x -k susp_activity_x
+-w /usr/bin/tshark -p x -k susp_activity_x
+-w /usr/bin/rawshark -p x -k susp_activity_x
+-w /usr/bin/rdesktop -p x -k susp_activity_x
+-w /usr/bin/nmap -p x -k susp_activity_x
+
+## Added to catch netcat on Ubuntu
+-w /bin/nc.openbsd -p x -k susp_activity_x
+-w /bin/nc.traditional -p x -k susp_activity_x
+
+## Sbin suspicious activity
+-w /sbin/iptables -p x -k sbin_susp_x
+-w /sbin/ip6tables -p x -k sbin_susp_x
+-w /sbin/ifconfig -p x -k sbin_susp_x
+-w /usr/sbin/arptables -p x -k sbin_susp_x
+-w /usr/sbin/ebtables -p x -k sbin_susp_x
+-w /sbin/xtables-nft-multi -p x -k sbin_susp_x
+-w /usr/sbin/nft -p x -k sbin_susp_x
+-w /usr/sbin/tcpdump -p x -k sbin_susp_x
+-w /usr/sbin/traceroute -p x -k sbin_susp_x
+-w /usr/sbin/ufw -p x -k sbin_susp_x
+
+## dbus-send invocation
+### may indicate privilege escalation CVE-2021-3560
+-w /usr/bin/dbus-send -p x -k dbus_send_x
+
+## pkexec invocation
+### may indicate privilege escalation CVE-2021-4034
+-w /usr/bin/pkexec -p x -k pkexec_x
+
+## Suspicious shells
+-w /bin/ash -p x -k susp_shell
+-w /bin/bash -p x -k susp_shell
+-w /bin/csh -p x -k susp_shell
+-w /bin/dash -p x -k susp_shell
+-w /bin/busybox -p x -k susp_shell
+-w /bin/ksh -p x -k susp_shell
+-w /bin/fish -p x -k susp_shell
+-w /bin/tcsh -p x -k susp_shell
+-w /bin/tclsh -p x -k susp_shell
+-w /bin/zsh -p x -k susp_shell
+
+## Shell/profile configurations
+-w /etc/profile.d/ -p wa -k shell_profiles_wa
+-w /etc/profile -p wa -k shell_profiles_wa
+-w /etc/shells -p wa -k shell_profiles_wa
+-w /etc/bashrc -p wa -k shell_profiles_wa
+-w /etc/csh.cshrc -p wa -k shell_profiles_wa
+-w /etc/csh.login -p wa -k shell_profiles_wa
+-w /etc/fish/ -p wa -k shell_profiles_wa
+-w /etc/zsh/ -p wa -k shell_profiles_wa
+
+## Injection
+### These rules watch for code injection by the ptrace facility.
+### This could indicate someone trying to do something bad or just debugging
+-a always,exit -F arch=b64 -S ptrace -F a0=0x4 -k code_injection
+-a always,exit -F arch=b64 -S ptrace -F a0=0x5 -k data_injection
+-a always,exit -F arch=b64 -S ptrace -F a0=0x6 -k register_injection
+-a always,exit -F arch=b64 -S ptrace -k tracing
+
+## Anonymous File Creation
+### These rules watch the use of memfd_create 
+### "memfd_create" creates anonymous file and returns a file descriptor to access it
+### When combined with "fexecve" can be used to stealthily run binaries in memory without touching disk  
+-a always,exit -F arch=b64 -S memfd_create -F key=anon_file_create
+
+## Privilege Abuse
+### The purpose of this rule is to detect when an admin may be abusing power by looking in user's home dir.
+-a always,exit -F dir=/home -F uid=0 -F auid>=1000 -F auid!=-1 -C auid!=obj_uid -k power_abuse
+
+# Software Management ---------------------------------------------------------
+
+# RPM (Redhat/CentOS)
+-w /usr/bin/rpm -p x -k software_mgmt
+-w /usr/bin/yum -p x -k software_mgmt
+
+# DNF (Fedora/RedHat 8/CentOS 8)
+-w /usr/bin/dnf -p x -k software_mgmt
+
+# YAST/Zypper/RPM (SuSE)
+-w /sbin/yast -p x -k software_mgmt
+-w /sbin/yast2 -p x -k software_mgmt
+-w /bin/rpm -p x -k software_mgmt
+-w /usr/bin/zypper -k software_mgmt
+
+# DPKG / APT-GET (Debian/Ubuntu)
+-w /usr/bin/dpkg -p x -k software_mgmt
+-w /usr/bin/apt -p x -k software_mgmt
+-w /usr/bin/apt-add-repository -p x -k software_mgmt
+-w /usr/bin/apt-get -p x -k software_mgmt
+-w /usr/bin/aptitude -p x -k software_mgmt
+-w /usr/bin/wajig -p x -k software_mgmt
+-w /usr/bin/snap -p x -k software_mgmt
+
+
+## Docker
+#-w /usr/bin/dockerd -k docker
+#-w /usr/bin/docker -k docker
+#-w /usr/bin/docker-containerd -k docker
+#-w /usr/bin/docker-runc -k docker
+#-w /var/lib/docker -k docker
+#-w /etc/docker -k docker
+#-w /etc/sysconfig/docker -k docker
+#-w /etc/sysconfig/docker-storage -k docker
+#-w /usr/lib/systemd/system/docker.service -k docker
+
+
+# High Volume Events ----------------------------------------------------------
+
+## Remove them if they cause to much volume in your environment
+
+## Root command executions
+-a always,exit -F arch=b64 -F euid=0 -S execve -k root_actions
+-a exit,always -F arch=b32 -F euid=0 -S execve -k root_actions

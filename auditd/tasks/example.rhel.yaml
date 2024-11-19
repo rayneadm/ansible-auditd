@@ -1,0 +1,68 @@
+---
+- name: RHEL - INSTALL "{{ package_rhel }}" package
+  become: true
+  ansible.builtin.dnf:
+    name: 
+      - "{{ package_rhel }}" 
+      - audit-libs
+      - audispd-plugins
+    state: latest 
+  when: ansible_facts.packages['audit'] is not defined
+  tags:
+    - auditd
+ 
+- name: RHEL - CREATE rules.d directory
+  ansible.builtin.file:
+    path: "{{ auditd_config_directory }}/rules.d"
+    state: directory
+    mode: "0750"
+  notify: Restart and enable auditd
+  tags:
+    - auditd
+
+- name: RHEL - Reload systemd daemon
+  become: true
+  ansible.builtin.command:
+    cmd: systemctl daemon-reload
+  tags:
+    - auditd
+
+- name: Create override file for auditd service
+  ansible.builtin.systemd:
+    name: auditd
+    enabled: true
+    state: restarted
+    daemon_reload: true
+    drop_in: 
+      - filename: custom.conf
+        options:
+          Service:
+            RefuseManualStop: "no"
+
+- name: RHEL - Comment out RefuseManualStop in auditd unit file
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/auditd.service
+    regexp: '^RefuseManualStop=yes'
+    line: '#RefuseManualStop=yes'
+    backrefs: yes
+  tags:
+    - auditd
+
+- name: RHEL - Reload systemd daemon
+  become: true
+  ansible.builtin.command:
+    cmd: systemctl daemon-reload
+  tags:
+    - auditd
+
+- name: RHEL - CONFIG main rule (audit.rules) RHEL
+  become: true
+  ansible.builtin.template:
+    src: audit.rules.j2
+    dest: "{{ auditd_config_directory }}/rules.d/audit.rules"
+    mode: "0600"
+  notify: Restart and enable auditd
+  tags:
+    - auditd
+

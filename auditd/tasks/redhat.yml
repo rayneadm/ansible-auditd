@@ -1,0 +1,50 @@
+---
+- name: RHEL - INSTALL "{{ package_rhel }}" package
+  become: true
+  ansible.builtin.package:
+    name: 
+      - "{{ package_rhel }}" 
+    state: present 
+  when: ansible_facts.packages['audit'] is not defined
+  tags:
+    - auditd
+ 
+- name: RHEL - Install "{{ package_rhel }}" libs
+  become: true
+  ansible.builtin.package:
+    name:
+      - audit-libs
+      - audispd-plugins
+    state: present 
+  tags:
+    - auditd
+
+- name: RHEL - CREATE rules.d directory
+  ansible.builtin.file:
+    path: "{{ auditd_config_directory }}/rules.d"
+    state: directory
+    mode: "0750"
+  notify: Restart auditd
+  tags:
+    - auditd
+
+- name: RHEL - CONFIG main rule (audit.rules) RHEL
+  become: true
+  ansible.builtin.template:
+    src: audit.rules.j2
+    dest: "{{ auditd_config_directory }}/rules.d/audit.rules"
+    mode: "0664"
+  notify: Restart auditd
+  tags:
+    - auditd
+
+- name: RHEL - STOP auditd
+  become: true
+  ansible.builtin.shell: |
+    service auditd stop
+
+- name: RHEL - start and enable auditd
+  ansible.builtin.service:
+    name: auditd
+    state: started
+    use: service
